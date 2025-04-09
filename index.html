@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MCDM Prototype with AHP Calculation</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 50px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1, h2 {
+      color: #333;
+      font-weight: 300;
+    }
+    .form-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    label {
+      font-size: 16px;
+      color: #555;
+    }
+    input[type="text"], input[type="number"] {
+      font-size: 16px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    input[type="text"].criteria-input {
+      width: 100%;
+    }
+    select {
+      font-size: 16px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: white;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button.save {
+      background-color: #2196F3;
+      margin-top: 20px;
+    }
+    button.save:hover {
+      background-color: #1976D2;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: center;
+      border: 1px solid #ddd;
+    }
+    th {
+      background-color: #f8f8f8;
+      color: #333;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MCDM Prototype</h1>
+    
+    <div class="section">
+      <div class="form-group">
+        <label for="mcdmSystem">MCDM System:</label>
+        <select id="mcdmSystem" onchange="handleMCDMChange()">
+          <option value="AHP">AHP (Analytic Hierarchy Process)</option>
+          <option value="BWM">BWM (Best-Worst Method)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section" id="criteriaSection">
+      <div class="form-group">
+        <label for="criterias">Number of criteria:</label>
+        <input type="text" id="criterias" name="criterias" placeholder="Enter number">
+        <button onclick="generateCriteriaTable()">Generate Criteria Table</button>
+      </div>
+      <div id="criteriaTable"></div>
+      <button class="save" id="saveCriteriaBtn" onclick="saveCriteria()" style="display: none;">Save Criteria</button>
+    </div>
+
+    <!-- Best-Worst Selection Section (BWM only) -->
+    <div class="section" id="bestWorstSection" style="display:none;">
+      <h2>Select Best and Worst Criteria</h2>
+      <div class="form-group">
+        <label for="bestCriterion">Best Criterion:</label>
+        <select id="bestCriterion"></select>
+      </div>
+      <div class="form-group">
+        <label for="worstCriterion">Worst Criterion:</label>
+        <select id="worstCriterion"></select>
+      </div>
+      <button onclick="generateBWMMatrix()">Generate Comparison Matrix</button>
+    </div>
+    
+    <!-- Container for the pairwise comparison matrix -->
+    <div class="section" id="pairwiseSection" style="display:none;">
+      <h2>Pairwise Comparison Matrix</h2>
+      <div id="pairwiseMatrix"></div>
+      <button class="save" id="calcButton" onclick="calculateBWM()" style="margin-top:20px;">Calculate</button>
+    </div>
+
+    <!-- Container for displaying results -->
+    <div class="section" id="resultsSection" style="display:none;">
+      <h2>Results</h2>
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <script>
+    let criteriaList = [];
+
+    // Helper function to compute GCD
+    function gcd(a, b) {
+      return b === 0 ? a : gcd(b, a % b);
+    }
+
+    // Helper function to parse numeric inputs,
+    // allowing fractional input like "1/7".
+    function parseValue(valStr) {
+      if (valStr.includes("/")) {
+        let parts = valStr.split("/");
+        if (parts.length === 2) {
+          let numerator = parseFloat(parts[0].trim());
+          let denominator = parseFloat(parts[1].trim());
+          if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
+            return numerator / denominator;
+          }
+        }
+        return NaN;
+      } else {
+        return parseFloat(valStr);
+      }
+    }
+
+    function generateCriteriaTable() {
+      const numCriteria = parseInt(document.getElementById('criterias').value);
+      if (isNaN(numCriteria) || numCriteria <= 0) {
+        alert('Please enter a valid number');
+        return;
+      }
+
+      let tableHTML = '<table><tr><th>Criteria</th></tr>';
+      for (let i = 0; i < numCriteria; i++) {
+        tableHTML += `<tr><td><input type="text" class="criteria-input" placeholder="Enter criteria ${i + 1}"></input></td></tr>`;
+      }
+      tableHTML += '</table>';
+
+      document.getElementById('criteriaTable').innerHTML = tableHTML;
+      document.getElementById('saveCriteriaBtn').style.display = 'block';
+    }
+
+    function saveCriteria() {
+      const criteriaInputs = document.querySelectorAll('.criteria-input');
+      criteriaList = Array.from(criteriaInputs).map(input => input.value.trim());
+      
+      if (criteriaList.some(value => !value)) {
+        alert('Please fill in all criteria fields');
+        return;
+      }
+
+      const mcdmSystem = document.getElementById('mcdmSystem').value;
+      if (mcdmSystem === 'AHP') {
+        generatePairwiseMatrix();
+      } else if (mcdmSystem === 'BWM') {
+        setupBestWorstSelection();
+      }
+    }
+
+    function setupBestWorstSelection() {
+      const bestSelect = document.getElementById('bestCriterion');
+      const worstSelect = document.getElementById('worstCriterion');
+      
+      // Clear existing options
+      bestSelect.innerHTML = '';
+      worstSelect.innerHTML = '';
+      
+      // Add criteria as options
+      criteriaList.forEach((criterion, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = criterion;
+        bestSelect.appendChild(option.cloneNode(true));
+        worstSelect.appendChild(option);
+      });
+      
+      document.getElementById('bestWorstSection').style.display = 'block';
+    }
+
+    function generateBWMMatrix() {
+      const bestIndex = parseInt(document.getElementById('bestCriterion').value);
+      const worstIndex = parseInt(document.getElementById('worstCriterion').value);
+      
+      if (bestIndex === worstIndex) {
+        alert('Best and worst criteria cannot be the same');
+        return;
+      }
+
+      const n = criteriaList.length;
+      let matrixHTML = '<table><thead><tr><th></th>';
+      
+      // Table header with criteria names
+      for (let j = 0; j < n; j++) {
+        matrixHTML += `<th>${criteriaList[j]}</th>`;
+      }
+      matrixHTML += '</tr></thead><tbody>';
+
+      // Create table rows
+      for (let i = 0; i < n; i++) {
+        matrixHTML += `<tr><th>${criteriaList[i]}</th>`;
+        for (let j = 0; j < n; j++) {
+          if (i === j) {
+            // Diagonal cells: fixed value 1
+            matrixHTML += `<td><input type="text" value="1" disabled style="width:60px; text-align:center;"></td>`;
+          } else if (i === bestIndex || j === worstIndex) {
+            // Best row and worst column: allow user input
+            matrixHTML += `<td><input type="text" placeholder="Value" 
+                              style="width:60px; text-align:center;" 
+                              id="cell-${i}-${j}"></td>`;
+          } else {
+            // Other cells: empty and disabled
+            matrixHTML += `<td><input type="text" value="" disabled style="width:60px; text-align:center;"></td>`;
+          }
+        }
+        matrixHTML += '</tr>';
+      }
+      matrixHTML += '</tbody></table>';
+
+      document.getElementById('pairwiseMatrix').innerHTML = matrixHTML;
+      document.getElementById('pairwiseSection').style.display = 'block';
+    }
+
+    function calculateBWM() {
+      const n = criteriaList.length;
+      const bestIndex = parseInt(document.getElementById('bestCriterion').value);
+      const worstIndex = parseInt(document.getElementById('worstCriterion').value);
+      
+      // Build the comparison vectors
+      let aB = []; // Best-to-others vector
+      let aW = []; // Others-to-worst vector
+      
+      // Get best-to-others comparisons
+      for (let j = 0; j < n; j++) {
+        if (j === bestIndex) {
+          aB.push(1);
+        } else {
+          const cell = document.getElementById(`cell-${bestIndex}-${j}`);
+          const value = parseValue(cell.value);
+          if (isNaN(value) || value <= 0) {
+            alert(`Please enter a valid positive number for comparison with ${criteriaList[j]}`);
+            return;
+          }
+          aB.push(value);
+        }
+      }
+      
+      // Get others-to-worst comparisons
+      for (let i = 0; i < n; i++) {
+        if (i === worstIndex) {
+          aW.push(1);
+        } else {
+          const cell = document.getElementById(`cell-${i}-${worstIndex}`);
+          const value = parseValue(cell.value);
+          if (isNaN(value) || value <= 0) {
+            alert(`Please enter a valid positive number for comparison with ${criteriaList[i]}`);
+            return;
+          }
+          aW.push(value);
+        }
+      }
+
+      // Create a form and submit it
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/calculate_bwm';
+      
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'data';
+      input.value = JSON.stringify({ aB, aW });
+      form.appendChild(input);
+      
+      document.body.appendChild(form);
+      form.submit();
+    }
+
+    function generatePairwiseMatrix() {
+      const n = criteriaList.length;
+      let matrixHTML = '<table><thead><tr><th></th>';
+      // Table header with criteria names
+      for (let j = 0; j < n; j++) {
+        matrixHTML += `<th>${criteriaList[j]}</th>`;
+      }
+      matrixHTML += '</tr></thead><tbody>';
+
+      // Create table rows
+      for (let i = 0; i < n; i++) {
+        matrixHTML += `<tr><th>${criteriaList[i]}</th>`;
+        for (let j = 0; j < n; j++) {
+          // Diagonal cells: fixed value 1
+          if (i === j) {
+            matrixHTML += `<td><input type="text" value="1" disabled style="width:60px; text-align:center;"></td>`;
+          }
+          // Upper triangular cells: allow user input
+          else if (i < j) {
+            matrixHTML += `<td><input type="text" placeholder="Value" 
+                              style="width:60px; text-align:center;" 
+                              id="cell-${i}-${j}" 
+                              oninput="updateReciprocal(${i}, ${j})"></td>`;
+          }
+          // Lower triangular cells: display reciprocal, disabled
+          else {
+            matrixHTML += `<td><input type="text" id="cell-${i}-${j}" value="" disabled style="width:60px; text-align:center;"></td>`;
+          }
+        }
+        matrixHTML += '</tr>';
+      }
+      matrixHTML += '</tbody></table>';
+
+      document.getElementById('pairwiseMatrix').innerHTML = matrixHTML;
+      document.getElementById('pairwiseSection').style.display = 'block';
+    }
+
+    // When an upper cell is edited, update its reciprocal cell.
+    function updateReciprocal(i, j) {
+      const inputUpper = document.getElementById(`cell-${i}-${j}`);
+      let valueStr = inputUpper.value;
+      let val = parseValue(valueStr);
+      
+      // Check if valid and positive
+      if (!isNaN(val) && val > 0) {
+        // Format reciprocal as a decimal in 0.xxx format (if it's an integer, it'll be shown as, e.g., 7.000)
+        const reciprocal = 1 / val;
+        // Use toFixed(3) to display in 0.xxx format
+        const formattedReciprocal = reciprocal.toFixed(3);
+        const inputLower = document.getElementById(`cell-${j}-${i}`);
+        inputLower.value = formattedReciprocal;
+      } else {
+        // Clear the reciprocal cell if the input is invalid
+        document.getElementById(`cell-${j}-${i}`).value = '';
+      }
+    }
+
+    function calculateAHPWeights(comparisonMatrix) {
+      // Calculate the principal eigenvector using the power method
+      const maxIterations = 100;
+      const tolerance = 1e-6;
+      
+      // Start with initial vector of ones
+      let eigenvector = Array(comparisonMatrix.length).fill(1);
+      
+      for (let iter = 0; iter < maxIterations; iter++) {
+        // Multiply matrix by current eigenvector
+        let newEigenvector = multiplyMatrixVector(comparisonMatrix, eigenvector);
+        
+        // Normalize the new eigenvector
+        const sum = newEigenvector.reduce((a, b) => a + b, 0);
+        newEigenvector = newEigenvector.map(x => x / sum);
+        
+        // Check for convergence
+        const diff = Math.max(...eigenvector.map((v, i) => Math.abs(v - newEigenvector[i])));
+        if (diff < tolerance) {
+          eigenvector = newEigenvector;
+          break;
+        }
+        
+        eigenvector = newEigenvector;
+      }
+      
+      return eigenvector;
+    }
+
+    function multiplyMatrixVector(matrix, vector) {
+      return matrix.map(row => 
+        row.reduce((sum, val, i) => sum + val * vector[i], 0)
+      );
+    }
+
+    function calculateConsistencyRatio(comparisonMatrix, weights) {
+      // Calculate the maximum eigenvalue
+      const n = comparisonMatrix.length;
+      const weightedSum = comparisonMatrix.map(row => 
+        row.reduce((sum, val, i) => sum + val * weights[i], 0)
+      );
+      const lambdaMax = weightedSum.reduce((sum, val, i) => sum + val / weights[i], 0) / n;
+      
+      // Calculate Consistency Index (CI)
+      const CI = (lambdaMax - n) / (n - 1);
+      
+      // Random Index (RI) values for different matrix sizes
+      const RI = {
+        1: 0,
+        2: 0,
+        3: 0.58,
+        4: 0.90,
+        5: 1.12,
+        6: 1.24,
+        7: 1.32,
+        8: 1.41,
+        9: 1.45,
+        10: 1.49
+      };
+      
+      // Calculate Consistency Ratio (CR)
+      const CR = CI / RI[n];
+      
+      return CR;
+    }
+
+    function generatePairwiseComparisonMatrix(criteria) {
+      const n = criteria.length;
+      const matrix = Array(n).fill().map(() => Array(n).fill(1));
+      
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const comparison = prompt(`Compare ${criteria[i]} with ${criteria[j]} (1-9):`);
+          const value = parseFloat(comparison);
+          if (value >= 1 && value <= 9) {
+            matrix[i][j] = value;
+            matrix[j][i] = 1 / value;
+          } else {
+            alert('Please enter a valid number between 1 and 9');
+            return null;
+          }
+        }
+      }
+      
+      return matrix;
+    }
+
+    function performAHPAnalysis() {
+      const criteria = getCriteriaValues();
+      if (!criteria) return;
+      
+      const comparisonMatrix = generatePairwiseComparisonMatrix(criteria);
+      if (!comparisonMatrix) return;
+      
+      const weights = calculateAHPWeights(comparisonMatrix);
+      const CR = calculateConsistencyRatio(comparisonMatrix, weights);
+      
+      if (CR > 0.1) {
+        alert(`Warning: Consistency Ratio (${CR.toFixed(3)}) is too high. Please review your comparisons.`);
+      }
+      
+      displayResults(weights, criteria, 'AHP');
+    }
+
+    function calculateAHP() {
+      const n = criteriaList.length;
+      if (n < 1) {
+        alert('Please save criteria first');
+        return;
+      }
+
+      // Build the pairwise matrix from the table inputs
+      let comparisonMatrix = [];
+      for (let i = 0; i < n; i++) {
+        comparisonMatrix[i] = [];
+        for (let j = 0; j < n; j++) {
+          let cell = document.getElementById(`cell-${i}-${j}`);
+          if (cell) {
+            let cellValue = cell.value;
+            let value = parseValue(cellValue);
+            if (isNaN(value) || value <= 0) {
+              alert(`Please enter a valid positive number at cell [${i+1}, ${j+1}]. Fractional values (e.g., 1/7) are allowed.`);
+              return;
+            }
+            comparisonMatrix[i][j] = value;
+          } else {
+            comparisonMatrix[i][j] = (i === j) ? 1 : 0;
+          }
+        }
+      }
+
+      // Calculate weights using eigenvector method
+      const weights = calculateAHPWeights(comparisonMatrix);
+      
+      // Calculate consistency ratio
+      const CR = calculateConsistencyRatio(comparisonMatrix, weights);
+      
+      // Display results
+      displayResults(weights, CR);
+    }
+
+    // Displays the results with both percentage and decimal fraction formats.
+    function displayResults(weights, CR) {
+      let resultHTML = '<table><thead><tr><th>Criteria</th><th>Relative Weight (%)</th><th>Decimal Fraction</th></tr></thead><tbody>';
+
+      for (let i = 0; i < weights.length; i++) {
+        const weightDecimal = weights[i];
+        // Display the weight in 0.xxx format (using three decimal places)
+        const weightFormatted = weightDecimal.toFixed(3);
+        resultHTML += 
+          `<tr>
+            <td>${criteriaList[i]}</td>
+            <td>${(weightDecimal * 100).toFixed(2)}%</td>
+            <td>${weightFormatted}</td>
+          </tr>`;
+      }
+      resultHTML += '</tbody></table>';
+      resultHTML += `<p><strong>Consistency Ratio (CR):</strong> ${(CR * 100).toFixed(2)}%</p>`;
+      resultHTML += `<p>(A CR below 10% is generally acceptable.)</p>`;
+
+      document.getElementById('results').innerHTML = resultHTML;
+      document.getElementById('resultsSection').style.display = 'block';
+    }
+
+    // Function to handle MCDM system change
+    function handleMCDMChange() {
+      const mcdmSystem = document.getElementById('mcdmSystem').value;
+      
+      // Clear all sections
+      document.getElementById('criteriaTable').innerHTML = '';
+      document.getElementById('pairwiseMatrix').innerHTML = '';
+      document.getElementById('results').innerHTML = '';
+      
+      // Hide sections
+      document.getElementById('criteriaSection').style.display = 'none';
+      document.getElementById('bestWorstSection').style.display = 'none';
+      document.getElementById('pairwiseSection').style.display = 'none';
+      document.getElementById('resultsSection').style.display = 'none';
+      
+      // Reset criteria list
+      criteriaList = [];
+      
+      // Show appropriate sections based on selected method
+      if (mcdmSystem === 'AHP') {
+        document.getElementById('criteriaSection').style.display = 'block';
+        document.getElementById('calcButton').onclick = calculateAHP;
+      } else if (mcdmSystem === 'BWM') {
+        document.getElementById('criteriaSection').style.display = 'block';
+        document.getElementById('calcButton').onclick = calculateBWM;
+      }
+    }
+
+    // Initialize the interface based on the selected MCDM system
+    document.addEventListener('DOMContentLoaded', function() {
+      handleMCDMChange();
+    });
+  </script>
+</body>
+</html>
